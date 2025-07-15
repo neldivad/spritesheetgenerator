@@ -1,3 +1,14 @@
+## SpriteSheet Generator
+
+Intention is to build a spritesheet for Fruity Dance from FL Studio. 
+
+The whole process was so hard because every new add to animation requires a new spritesheet regenerated. 
+
+Editing the PSD file to re-render the spritesheet is also annoying as heck. Hence I made this app. 
+
+---
+
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
