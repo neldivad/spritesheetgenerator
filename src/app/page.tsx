@@ -16,6 +16,8 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import Header from '../components/custom/Header';
+import Footer from '../components/custom/Footer';
 
 const COLS = 8;
 const MIN_IMAGES = 8;
@@ -253,151 +255,156 @@ export default function SpriteSheetGenerator() {
     : { scaledW: 0, scaledH: 0 };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 to-gray-300 p-4">
-      <div
-        className={`bg-white rounded-xl shadow-lg p-8 flex flex-col gap-6 w-full max-w-2xl transition border-2 ${dragActive ? "border-blue-400 bg-blue-50" : "border-transparent"}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <h1 className="text-2xl font-bold text-center mb-2">SpriteSheet Generator</h1>
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-100 to-gray-300">
+      <Header />
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col items-center justify-center p-4">
         <div
-          className="w-full cursor-pointer flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition"
-          onClick={handleClickInput}
+          className={`bg-white rounded-xl shadow-lg p-8 flex flex-col gap-6 w-full max-w-2xl transition border-2 ${dragActive ? "border-blue-400 bg-blue-50" : "border-transparent"}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFiles}
-            className="hidden"
-            ref={inputRef}
-          />
-          <div className="text-gray-600">Click or drag & drop images here</div>
-        </div>
-        <div className="text-sm text-gray-600">Upload as many images as you want. 8 per row. Drag to rearrange. Remove with trash. At least 8 images required to generate a spritesheet.</div>
-        {urls.length > 0 && (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDndEnd}>
-            <SortableContext items={fileIds} strategy={horizontalListSortingStrategy}>
-              <div className="overflow-x-auto">
-                <div className="grid grid-cols-8 gap-2 my-4">
-                  {files.map((file, i) => (
-                    <SortableImage
-                      key={i}
-                      id={i.toString()}
-                      url={urls[i]}
-                      onRemove={() => remove(i)}
-                    />
-                  ))}
+          <h1 className="text-2xl font-bold text-center mb-2">SpriteSheet Generator</h1>
+          <div
+            className="w-full cursor-pointer flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition"
+            onClick={handleClickInput}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFiles}
+              className="hidden"
+              ref={inputRef}
+            />
+            <div className="text-gray-600">Click or drag & drop images here</div>
+          </div>
+          <div className="text-sm text-gray-600">Upload as many images as you want. 8 per row. Drag to rearrange. Remove with trash. At least 8 images required to generate a spritesheet.</div>
+          {urls.length > 0 && (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDndEnd}>
+              <SortableContext items={fileIds} strategy={horizontalListSortingStrategy}>
+                <div className="overflow-x-auto">
+                  <div className="grid grid-cols-8 gap-2 my-4">
+                    {files.map((file, i) => (
+                      <SortableImage
+                        key={i}
+                        id={i.toString()}
+                        url={urls[i]}
+                        onRemove={() => remove(i)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2 items-center">
+              <button
+                className="bg-blue-600 text-white rounded px-4 py-2 font-semibold hover:bg-blue-700 transition"
+                onClick={handleUpdatePreview}
+                disabled={files.length < MIN_IMAGES || loadingPreview || loadingGif}
+              >
+                Update Preview
+              </button>
+              <button
+                className="bg-gray-300 text-gray-800 rounded px-4 py-2 font-semibold hover:bg-gray-400 transition"
+                onClick={handleResetOutput}
+                disabled={!outputReady || loadingPreview || loadingGif}
+              >
+                Reset Output
+              </button>
+            </div>
+            <div className="flex gap-2 items-center">
+              <label className="text-sm">Scale:</label>
+              <input
+                type="range"
+                min={SCALE_MIN}
+                max={SCALE_MAX}
+                value={pendingScale}
+                onChange={handleScaleChange}
+                className="w-40"
+                disabled={loadingPreview || loadingGif}
+              />
+              <span className="text-xs">{pendingScale}%</span>
+            </div>
+          </div>
+          {outputReady && previewSnapshot && previewSnapshot.urls.length >= MIN_IMAGES && (
+            <>
+              <div className="flex flex-col items-center">
+                {loadingPreview ? (
+                  <div className="text-blue-600 font-semibold my-4">Loading...</div>
+                ) : null}
+                <canvas
+                  ref={canvasRef}
+                  style={{
+                    maxWidth: "100%",
+                    border: "1px solid #ccc",
+                    borderRadius: "0.5rem",
+                    background: "#eee",
+                    margin: "auto"
+                  }}
+                  width={scaledW}
+                  height={scaledH}
+                />
+                <div className="text-xs text-gray-500 mt-2">Spritesheet Preview ({scaledW} x {scaledH} px)</div>
+                <button
+                  className="mt-2 bg-blue-600 text-white rounded px-4 py-2 font-semibold hover:bg-blue-700 transition"
+                  onClick={downloadSpritesheet}
+                  disabled={previewSnapshot.urls.length % 8 !== 0 || loadingPreview || loadingGif}
+                >
+                  Download Spritesheet
+                </button>
+                {previewSnapshot.urls.length % 8 !== 0 && (
+                  <div className="text-xs text-red-500 mt-1">Number of images must be a multiple of 8 to download.</div>
+                )}
+              </div>
+              <div className="mt-8 w-full">
+                <h2 className="text-lg font-semibold mb-2">GIF Preview (per row)</h2>
+                <div className="flex gap-2 items-center mb-2">
+                  <label className="text-sm">Speed (sec/frame):</label>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={0.5}
+                    step={0.01}
+                    value={gifSpeed}
+                    onChange={handleGifParamChange}
+                    className="w-40"
+                    disabled={loadingPreview || loadingGif}
+                  />
+                  <span className="text-xs">{gifSpeed}s</span>
+                  <button
+                    className="ml-4 bg-blue-600 text-white rounded px-3 py-1 font-semibold hover:bg-blue-700 transition"
+                    onClick={handleSimulateGif}
+                    disabled={loadingPreview || loadingGif}
+                  >
+                    Simulate GIF
+                  </button>
+                  {loadingGif ? (
+                    <span className="ml-4 text-blue-600 font-semibold">Loading...</span>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  {gifUrls.map((gif, i) => (
+                     gif ? (
+                       <div key={i} className="flex flex-col items-center">
+                         <img src={gif} alt={`gif-row-${i}`} className="border rounded w-20 h-20 object-contain" />
+                         <div className="text-xs text-gray-500">Row {i + 1}</div>
+                       </div>
+                     ) : null
+                   ))}
                 </div>
               </div>
-            </SortableContext>
-          </DndContext>
-        )}
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2 items-center">
-            <button
-              className="bg-blue-600 text-white rounded px-4 py-2 font-semibold hover:bg-blue-700 transition"
-              onClick={handleUpdatePreview}
-              disabled={files.length < MIN_IMAGES || loadingPreview || loadingGif}
-            >
-              Update Preview
-            </button>
-            <button
-              className="bg-gray-300 text-gray-800 rounded px-4 py-2 font-semibold hover:bg-gray-400 transition"
-              onClick={handleResetOutput}
-              disabled={!outputReady || loadingPreview || loadingGif}
-            >
-              Reset Output
-            </button>
-          </div>
-          <div className="flex gap-2 items-center">
-            <label className="text-sm">Scale:</label>
-            <input
-              type="range"
-              min={SCALE_MIN}
-              max={SCALE_MAX}
-              value={pendingScale}
-              onChange={handleScaleChange}
-              className="w-40"
-              disabled={loadingPreview || loadingGif}
-            />
-            <span className="text-xs">{pendingScale}%</span>
-          </div>
+            </>
+          )}
         </div>
-        {outputReady && previewSnapshot && previewSnapshot.urls.length >= MIN_IMAGES && (
-          <>
-            <div className="flex flex-col items-center">
-              {loadingPreview ? (
-                <div className="text-blue-600 font-semibold my-4">Loading...</div>
-              ) : null}
-              <canvas
-                ref={canvasRef}
-                style={{
-                  maxWidth: "100%",
-                  border: "1px solid #ccc",
-                  borderRadius: "0.5rem",
-                  background: "#eee",
-                  margin: "auto"
-                }}
-                width={scaledW}
-                height={scaledH}
-              />
-              <div className="text-xs text-gray-500 mt-2">Spritesheet Preview ({scaledW} x {scaledH} px)</div>
-              <button
-                className="mt-2 bg-blue-600 text-white rounded px-4 py-2 font-semibold hover:bg-blue-700 transition"
-                onClick={downloadSpritesheet}
-                disabled={previewSnapshot.urls.length % 8 !== 0 || loadingPreview || loadingGif}
-              >
-                Download Spritesheet
-              </button>
-              {previewSnapshot.urls.length % 8 !== 0 && (
-                <div className="text-xs text-red-500 mt-1">Number of images must be a multiple of 8 to download.</div>
-              )}
-            </div>
-            <div className="mt-8 w-full">
-              <h2 className="text-lg font-semibold mb-2">GIF Preview (per row)</h2>
-              <div className="flex gap-2 items-center mb-2">
-                <label className="text-sm">Speed (sec/frame):</label>
-                <input
-                  type="range"
-                  min={0.05}
-                  max={0.5}
-                  step={0.01}
-                  value={gifSpeed}
-                  onChange={handleGifParamChange}
-                  className="w-40"
-                  disabled={loadingPreview || loadingGif}
-                />
-                <span className="text-xs">{gifSpeed}s</span>
-                <button
-                  className="ml-4 bg-blue-600 text-white rounded px-3 py-1 font-semibold hover:bg-blue-700 transition"
-                  onClick={handleSimulateGif}
-                  disabled={loadingPreview || loadingGif}
-                >
-                  Simulate GIF
-                </button>
-                {loadingGif ? (
-                  <span className="ml-4 text-blue-600 font-semibold">Loading...</span>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-4">
-                {gifUrls.map((gif, i) => (
-                   gif ? (
-                     <div key={i} className="flex flex-col items-center">
-                       <img src={gif} alt={`gif-row-${i}`} className="border rounded w-20 h-20 object-contain" />
-                       <div className="text-xs text-gray-500">Row {i + 1}</div>
-                     </div>
-                   ) : null
-                 ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+      </main>
+      <Footer />
     </div>
   );
 }
