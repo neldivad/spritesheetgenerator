@@ -42,16 +42,22 @@ function SortableImage({ id, url, onRemove }: { id: string; url: string; onRemov
         transition,
         opacity: isDragging ? 0.5 : 1,
       }}
-      className="flex flex-col items-center cursor-move"
-      {...attributes}
-      {...listeners}
+      className="flex flex-col items-center"
     >
-      <img src={url} alt={id} className="w-16 h-16 object-contain border rounded" />
+      <img
+        src={url}
+        alt={id}
+        className="w-16 h-16 object-contain border rounded cursor-move"
+        {...attributes}
+        {...listeners}
+      />
       <button
         className="px-1 text-xs bg-red-400 text-white rounded mt-1"
         onClick={onRemove}
         type="button"
-      >🗑️</button>
+      >
+        🗑️
+      </button>
     </div>
   );
 }
@@ -66,7 +72,13 @@ export default function SpriteSheetGenerator() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [outputReady, setOutputReady] = useState(false);
   const [pendingScale, setPendingScale] = useState(100);
-  const [previewSnapshot, setPreviewSnapshot] = useState<{urls: string[], scale: number, spriteSize: {w: number, h: number}} | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<{
+    urls: string[],
+    scale: number,
+    spriteSize: {w: number, h: number},
+    cellWidth?: number,
+    cellHeight?: number
+  } | null>(null);
   const [gifSnapshot, setGifSnapshot] = useState<{urls: string[], spriteSize: {w: number, h: number}, speed: number} | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingGif, setLoadingGif] = useState(false);
@@ -88,63 +100,43 @@ export default function SpriteSheetGenerator() {
     img.src = urls[0];
   }, [urls]);
 
-  // GIF generation (only after simulateGif)
-  useEffect(() => {
-    if (!gifSnapshot || gifSnapshot.urls.length < MIN_IMAGES) { setGifUrls([]); setLoadingGif(false); return; }
-    setLoadingGif(true);
-    const { urls: gifUrlsSnap, spriteSize: gifSpriteSize, speed } = gifSnapshot;
-    const rows = Math.ceil(gifUrlsSnap.length / COLS);
-    async function generateGifs() {
-      try {
-        const gifshot = (await import('gifshot')).default || (await import('gifshot'));
-        const makeGif = (row: number) =>
-          new Promise<string>((resolve) => {
-            gifshot.createGIF({
-              images: gifUrlsSnap.slice(row * COLS, (row + 1) * COLS),
-              gifWidth: gifSpriteSize.w,
-              gifHeight: gifSpriteSize.h,
-              interval: speed,
-            }, (obj: { image?: string }) => resolve(obj.image || ""));
-          });
-        const gifs: string[] = [];
-        for (let r = 0; r < rows; ++r) {
-          gifs.push(await makeGif(r));
-        }
-        setGifUrls(gifs);
-      } catch (e) {
-        setGifUrls([]);
-      } finally {
-        setLoadingGif(false);
-      }
-    }
-    generateGifs();
-  }, [gifSnapshot]);
-
   // Spritesheet preview
   useEffect(() => {
     if (!previewSnapshot || !outputReady || previewSnapshot.urls.length < MIN_IMAGES || !canvasRef.current) return;
     setLoadingPreview(true);
-    const { urls: previewUrls, scale: previewScaleSnap, spriteSize: previewSpriteSize } = previewSnapshot;
+    const { urls: previewUrls, cellWidth, cellHeight } = previewSnapshot;
+    if (!cellWidth || !cellHeight) { setLoadingPreview(false); return; }
     const rows = Math.ceil(previewUrls.length / COLS);
-    const { scaledW, scaledH } = getValidScale(previewSpriteSize.w * COLS, previewSpriteSize.h * rows, previewScaleSnap, rows);
     const canvas = canvasRef.current;
-    canvas.width = scaledW;
-    canvas.height = scaledH;
+    canvas.width = cellWidth * COLS;
+    canvas.height = cellHeight * rows;
     const ctx = canvas.getContext("2d");
     if (!ctx) { setLoadingPreview(false); return; }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     let loaded = 0;
     previewUrls.forEach((url, i) => {
+      const col = i % COLS;
+      const row = Math.floor(i / COLS);
+      if (!url) {
+        loaded++;
+        if (loaded === previewUrls.length) setLoadingPreview(false);
+        return;
+      }
       const img = new window.Image();
       img.onload = () => {
-        const col = i % COLS;
-        const row = Math.floor(i / COLS);
+        // Scale to fit within cell, preserve aspect
+        const scale = Math.min(cellWidth! / img.width, cellHeight! / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        // Center in cell
+        const offsetX = col * cellWidth! + Math.round((cellWidth! - drawW) / 2);
+        const offsetY = row * cellHeight! + Math.round((cellHeight! - drawH) / 2);
         ctx.drawImage(
           img,
-          col * (scaledW / COLS),
-          row * (scaledH / rows),
-          scaledW / COLS,
-          scaledH / rows
+          offsetX,
+          offsetY,
+          drawW,
+          drawH
         );
         loaded++;
         if (loaded === previewUrls.length) setLoadingPreview(false);
@@ -156,6 +148,85 @@ export default function SpriteSheetGenerator() {
       img.src = url;
     });
   }, [previewSnapshot, outputReady]);
+
+  // GIF generation (only after simulateGif)
+  useEffect(() => {
+    if (!gifSnapshot || gifSnapshot.urls.length < MIN_IMAGES) { setGifUrls([]); setLoadingGif(false); return; }
+    setLoadingGif(true);
+    const { urls: gifUrlsSnap, speed } = gifSnapshot;
+    // Use previewSnapshot for cellWidth and cellHeight
+    const cellWidth = previewSnapshot?.cellWidth;
+    const cellHeight = previewSnapshot?.cellHeight;
+    if (!cellWidth || !cellHeight) { setGifUrls([]); setLoadingGif(false); return; }
+    const rows = Math.ceil(gifUrlsSnap.length / COLS);
+    async function generateGifs() {
+      try {
+        const gifshot = (await import('gifshot')).default || (await import('gifshot'));
+        // Helper: for each row, create an array of data URLs for that row, each image centered/scaled
+        async function getRowFrames(row: number): Promise<string[]> {
+          const frames: string[] = [];
+          for (let c = 0; c < COLS; ++c) {
+            const idx = row * COLS + c;
+            const url = gifUrlsSnap[idx];
+            // If empty slot, push a blank frame
+            if (!url) {
+              // Blank canvas
+              const blank = document.createElement('canvas');
+              blank.width = cellWidth!;
+              blank.height = cellHeight!;
+              frames.push(blank.toDataURL('image/png'));
+              continue;
+            }
+            // Load image
+            const img = await new Promise<HTMLImageElement>((resolve) => {
+              const im = new window.Image();
+              im.onload = () => resolve(im);
+              im.onerror = () => resolve(im);
+              im.src = url;
+            });
+            // Create canvas for this frame
+            const canvas = document.createElement('canvas');
+            canvas.width = cellWidth!;
+            canvas.height = cellHeight!;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              // Scale to fit within cell, preserve aspect
+              const scale = Math.min(cellWidth! / img.width, cellHeight! / img.height);
+              const drawW = Math.round(img.width * scale);
+              const drawH = Math.round(img.height * scale);
+              // Center in cell
+              const offsetX = Math.round((cellWidth! - drawW) / 2);
+              const offsetY = Math.round((cellHeight! - drawH) / 2);
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+            }
+            frames.push(canvas.toDataURL('image/png'));
+          }
+          return frames;
+        }
+        const gifs: string[] = [];
+        for (let r = 0; r < rows; ++r) {
+          const rowFrames = await getRowFrames(r);
+          if (rowFrames.length === 0) { gifs.push(""); continue; }
+          const gif = await new Promise<string>((resolve) => {
+            gifshot.createGIF({
+              images: rowFrames,
+              gifWidth: cellWidth!,
+              gifHeight: cellHeight!,
+              interval: speed,
+            }, (obj: { image?: string }) => resolve(obj.image || ""));
+          });
+          gifs.push(gif);
+        }
+        setGifUrls(gifs);
+      } catch (e) {
+        setGifUrls([]);
+      } finally {
+        setLoadingGif(false);
+      }
+    }
+    generateGifs();
+  }, [gifSnapshot, previewSnapshot]);
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement> | FileList) {
     let filesArr: File[] = [];
@@ -215,12 +286,39 @@ export default function SpriteSheetGenerator() {
 
   function handleUpdatePreview() {
     setLoadingPreview(true);
-    setPreviewSnapshot({
-      urls: urls.filter(Boolean),
-      scale: pendingScale,
-      spriteSize: { ...spriteSize },
+    // Load all images to get their natural sizes
+    Promise.all(urls.filter(Boolean).map(url => {
+      return new Promise<{w: number, h: number}>((resolve) => {
+        const img = new window.Image();
+        img.onload = () => resolve({ w: img.width, h: img.height });
+        img.onerror = () => resolve({ w: 1, h: 1 });
+        img.src = url;
+      });
+    })).then(dimensionsArr => {
+      const scale = pendingScale;
+      // Scale all images
+      const scaledWidths = dimensionsArr.map(dim => Math.round(dim.w * scale / 100));
+      const scaledHeights = dimensionsArr.map(dim => Math.round(dim.h * scale / 100));
+      // Uniform cell size: max width and max height
+      const cellWidth = Math.max(...scaledWidths);
+      const cellHeight = Math.max(...scaledHeights);
+      // Pad urls to a multiple of COLS
+      const paddedUrls = [...urls.filter(Boolean)];
+      const remainder = paddedUrls.length % COLS;
+      if (remainder !== 0) {
+        for (let i = 0; i < COLS - remainder; ++i) {
+          paddedUrls.push(""); // Use empty string for empty slots
+        }
+      }
+      setPreviewSnapshot({
+        urls: paddedUrls,
+        scale,
+        spriteSize: { ...spriteSize },
+        cellWidth,
+        cellHeight
+      });
+      setOutputReady(true);
     });
-    setOutputReady(true);
   }
   function handleResetOutput() {
     setOutputReady(false);
@@ -245,14 +343,8 @@ export default function SpriteSheetGenerator() {
 
   const fileIds = files.map((_, i) => i.toString());
   const rows = previewSnapshot ? Math.ceil(previewSnapshot.urls.length / COLS) : 0;
-  const { scaledW, scaledH } = previewSnapshot
-    ? getValidScale(
-        previewSnapshot.spriteSize.w * COLS,
-        previewSnapshot.spriteSize.h * rows,
-        previewSnapshot.scale,
-        rows
-      )
-    : { scaledW: 0, scaledH: 0 };
+  const scaledW = (previewSnapshot?.cellWidth ?? 0) * COLS;
+  const scaledH = (previewSnapshot?.cellHeight ?? 0) * rows;
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-100 to-gray-300">
